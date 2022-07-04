@@ -4,11 +4,16 @@ const app = express();
 const path = require('path')
 const {v4: uuidV4} = require('uuid')
 const bodyParser = require('body-parser'); // middleware
-app.use(bodyParser.urlencoded({ extended: false }));
-
-
-
+app.use(bodyParser.urlencoded({ extended: true }));
+var session = require('express-session');
+var multer = require('multer');
+var upload = multer(); 
+var cookieParser = require('cookie-parser');
+app.use(upload.array());
+app.use(cookieParser());
 var port = 8080;
+app.use(session({secret: "Your secret key"}));
+const fs = require('fs');
 
 
 
@@ -24,6 +29,10 @@ const {
 const server = http.createServer(app);
 
 const io = socketio(server);
+
+var Users = [];
+var Newdata = fs.readFileSync('users.json');
+var newData = JSON.stringify(Newdata);
 
 
 
@@ -82,15 +91,54 @@ app.get('/chatlogged', (req, res) =>{
   res.render("chatlogged")
  })
 
+
+ 
 app.post("/login", (req, res) => {
   let form = req.body;
   let username = req.body["username"];
   let password = req.body["password"];
-  //chack user login
- res.send(` Username:${username} Password:${password}`)
+ //more cool cookiestuff 
+ console.log(Users);
+ if(!req.body.username || !req.body.password){
+    res.render('login', {message: "Please enter both username and password"});
+ } else {
+    Users.filter(function(user){
+       if(user.username === req.body.username && user.password === req.body.password){
+          req.session.user = user;
+          res.redirect('/protected_page');
+       }
+    });
+    res.render('login', {message: "Invalid credentials!"});
+ }
  
+ app.get('/logout', function(req, res){
+  req.session.destroy(function(){
+     console.log("user logged out.")
+  });
+  res.redirect('/login');
+});
+
+
+
+  //chack user login
+ //res.send(` Username:${username} Password:${password}`)
+ 
+
   console.log(`\x1b[42mNEW LOGIN REQUEST\x1b[0m: (${username} | ${password})`)
 })
+
+
+function checkSignIn(req, res,next){
+  if(req.session.user){
+     next();     //If session exists, proceed to page
+  } else {
+     var err = new Error("Not logged in!");
+     console.log(req.session.user);
+     next(err);  //Error, trying to access unauthorized page!
+  }
+}
+
+
 
 
 app.post("/signup", (req, res) => {
@@ -100,8 +148,30 @@ app.post("/signup", (req, res) => {
   let email = req.body["email"];
   //chack user signup
   console.log(`\x1b[42mNEW SIGN UP REQUEST\x1b[0m: (${username} | ${password} | ${email})`)
-})
+///add signup cool cookie stuff
+if(!req.body.username || !req.body.password){
+  res.status("400");
+  res.send("Invalid details!");
+} else {
+  Users.filter(function(user){
+     if(user.username === req.body.username){
+        res.render('signup', {
+           message: "User Already Exists! Login or choose another user id"});
+     }
+  });
+  let newUser = {username: req.body.username, password: req.body.password};
+   Users.push(newUser, Newdata);
+ 
+  req.session.user = newUser;
+  res.redirect('/protected_page');
+  fs.writeFile  = ("users.json");
+}
+});
 
+
+app.get('/protected_page', checkSignIn, function(req, res){
+  res.render('protected_page', {username: req.session.user.username})
+});
 
 ////app.use(function (req,res,next){
 ////	res.status(404).render("404");
@@ -189,6 +259,10 @@ io.on('connection', socket => {
       })
   })
 })
+
+
+///add this is the login and signup features still experimental!@
+
 
 
 
